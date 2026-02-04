@@ -14,22 +14,19 @@ function getDistanceInMeters(
   lat2: number,
   lon2: number
 ) {
-  const R = 6371000; // Earth radius in meters
+  const R = 6371000;
 
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
-  const dLon = ((lon2 - lon1) * Math.PI) / 180; // ✅ FIXED
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
 
   const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.sin(dLat / 2) ** 2 +
     Math.cos((lat1 * Math.PI) / 180) *
       Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(dLon / 2) *
-      Math.sin(dLon / 2);
+      Math.sin(dLon / 2) ** 2;
 
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
+  return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
 }
-
 
 export default function StudentPage() {
   const [email, setEmail] = useState("");
@@ -44,7 +41,7 @@ export default function StudentPage() {
     });
   }, []);
 
-  // Start QR scanner ONLY after login
+  // Start scanner ONLY after login
   useEffect(() => {
     if (!loggedIn) return;
 
@@ -55,7 +52,7 @@ export default function StudentPage() {
     );
 
     const onScanSuccess = async (decodedText: string) => {
-      // Expected: token|expiry|teacherEmail|lat|lng
+      // token|expiry|teacherEmail|lat|lng
       const parts = decodedText.split("|");
       if (parts.length !== 5) {
         setStatus("Invalid QR ❌");
@@ -102,15 +99,25 @@ export default function StudentPage() {
       } = await supabase.auth.getUser();
 
       if (!user || !user.email) {
-        setStatus("Not logged in");
+        setStatus("Not logged in ❌");
         return;
       }
 
-      await supabase.from("attendance").insert({
+      // 🔒 INSERT WITH ERROR HANDLING
+      const { error } = await supabase.from("attendance").insert({
         student_email: user.email,
         qr_value: qrToken,
         teacher_email: teacherEmail,
       });
+
+      if (error) {
+        if (error.code === "23505") {
+          setStatus("Attendance already marked ❌");
+        } else {
+          setStatus("Failed to mark attendance ❌");
+        }
+        return;
+      }
 
       setStatus("Attendance marked ✅");
       scanner.clear();
@@ -216,4 +223,3 @@ export default function StudentPage() {
     </main>
   );
 }
-
