@@ -5,10 +5,8 @@ import { Html5QrcodeScanner } from "html5-qrcode";
 import { supabase } from "../../lib/supabase";
 
 /* ===== CONFIG ===== */
-const ALLOWED_RADIUS = 10git add .
-git commit -m "Fix student attendance insert handling"
-git push
-0; // meters
+const ALLOWED_RADIUS = 110;      // meters
+const MAX_GPS_ACCURACY = 100;    // meters
 /* ================== */
 
 function getDistanceInMeters(
@@ -18,7 +16,6 @@ function getDistanceInMeters(
   lon2: number
 ) {
   const R = 6371000;
-
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
   const dLon = ((lon2 - lon1) * Math.PI) / 180;
 
@@ -37,14 +34,14 @@ export default function StudentPage() {
   const [loggedIn, setLoggedIn] = useState(false);
   const [status, setStatus] = useState("");
 
-  // Check existing session
+  // Check session
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       if (data.session) setLoggedIn(true);
     });
   }, []);
 
-  // Start scanner ONLY after login
+  // Start scanner only after login
   useEffect(() => {
     if (!loggedIn) return;
 
@@ -55,7 +52,6 @@ export default function StudentPage() {
     );
 
     const onScanSuccess = async (decodedText: string) => {
-      // token|expiry|teacherEmail|lat|lng
       const parts = decodedText.split("|");
       if (parts.length !== 5) {
         setStatus("Invalid QR ❌");
@@ -69,7 +65,7 @@ export default function StudentPage() {
         return;
       }
 
-      setStatus("Checking location...");
+      setStatus("Getting accurate location...");
 
       let position: GeolocationPosition;
       try {
@@ -77,7 +73,8 @@ export default function StudentPage() {
           (resolve, reject) =>
             navigator.geolocation.getCurrentPosition(resolve, reject, {
               enableHighAccuracy: true,
-              timeout: 10000,
+              timeout: 15000,
+              maximumAge: 0,
             })
         );
       } catch {
@@ -85,15 +82,29 @@ export default function StudentPage() {
         return;
       }
 
+      const { latitude, longitude, accuracy } = position.coords;
+
+      // 🔒 Accuracy gate (THIS WAS MISSING)
+      if (accuracy > MAX_GPS_ACCURACY) {
+        setStatus(
+          `Location not accurate enough (${Math.round(
+            accuracy
+          )}m). Move slightly & retry ❌`
+        );
+        return;
+      }
+
       const distance = getDistanceInMeters(
-        position.coords.latitude,
-        position.coords.longitude,
+        latitude,
+        longitude,
         Number(tLat),
         Number(tLng)
       );
 
       if (distance > ALLOWED_RADIUS) {
-        setStatus("You are not near the teacher ❌");
+        setStatus(
+          `You are too far (${Math.round(distance)}m) ❌`
+        );
         return;
       }
 
@@ -106,7 +117,6 @@ export default function StudentPage() {
         return;
       }
 
-      // 🔒 INSERT WITH ERROR HANDLING
       const { error } = await supabase.from("attendance").insert({
         student_email: user.email,
         qr_value: qrToken,
@@ -133,7 +143,7 @@ export default function StudentPage() {
     };
   }, [loggedIn]);
 
-  /* ===== LOGIN SCREEN ===== */
+  /* ===== LOGIN ===== */
   if (!loggedIn) {
     return (
       <main className="min-h-screen bg-slate-900 flex items-center justify-center">
@@ -187,16 +197,12 @@ export default function StudentPage() {
               {status}
             </p>
           )}
-
-          <a href="/" className="block text-center text-slate-400 text-sm">
-            ← Back to Home
-          </a>
         </div>
       </main>
     );
   }
 
-  /* ===== SCANNER SCREEN ===== */
+  /* ===== SCANNER ===== */
   return (
     <main className="min-h-screen bg-slate-900 flex flex-col items-center justify-center gap-6">
       <h1 className="text-xl font-bold text-white">
