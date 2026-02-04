@@ -5,7 +5,10 @@ import { Html5QrcodeScanner } from "html5-qrcode";
 import { supabase } from "../../lib/supabase";
 
 /* ===== CONFIG ===== */
-const ALLOWED_RADIUS = 50; // meters
+const ALLOWED_RADIUS = 10git add .
+git commit -m "Fix student attendance insert handling"
+git push
+0; // meters
 /* ================== */
 
 function getDistanceInMeters(
