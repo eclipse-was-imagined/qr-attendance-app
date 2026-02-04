@@ -1,67 +1,44 @@
 "use client";
 
-import { useState } from "react";
-import { supabase } from "../../lib/supabase";
+import { useEffect, useState } from "react";
 import { QRCodeCanvas } from "qrcode.react";
-
-const ALLOWED_RADIUS = 50; // meters (students must be within this)
+import { supabase } from "../../lib/supabase";
 
 export default function TeacherPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loggedIn, setLoggedIn] = useState(false);
+  const [qrValue, setQrValue] = useState("");
   const [status, setStatus] = useState("");
-  const [qrValue, setQrValue] = useState<string | null>(null);
 
-  const handleLogin = async () => {
-    setStatus("Logging in...");
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
+  // Check session
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      if (data.session) setLoggedIn(true);
     });
-
-    if (error) {
-      setStatus(error.message);
-      return;
-    }
-
-    if (data.session) {
-      setLoggedIn(true);
-      setStatus("");
-    }
-  };
+  }, []);
 
   const generateQR = async () => {
-    setStatus("Getting location...");
-
-    const position = await new Promise<GeolocationPosition>((resolve, reject) =>
-      navigator.geolocation.getCurrentPosition(resolve, reject, {
-        enableHighAccuracy: true,
-      })
-    );
-
-    const teacherLat = position.coords.latitude;
-    const teacherLng = position.coords.longitude;
-
     const {
       data: { user },
     } = await supabase.auth.getUser();
 
-    if (!user || !user.email) {
-      setStatus("Not logged in");
+    if (!user?.email) {
+      setStatus("Not logged in ❌");
       return;
     }
 
-    const token = Math.random().toString(36).substring(2, 12);
-    const expiry = Date.now() + 2 * 60 * 1000; // 2 min
+    const token = crypto.randomUUID();
+    const expiry = Date.now() + 2 * 60 * 1000; // 2 minutes
 
-    // token|expiry|teacherEmail|lat|lng
-    const payload = `${token}|${expiry}|${user.email}|${teacherLat}|${teacherLng}`;
+    // token | expiry | teacherEmail
+    const payload = `${token}|${expiry}|${user.email}`;
 
     setQrValue(payload);
-    setStatus("");
+    setStatus("QR generated (valid for 2 minutes)");
   };
 
+  /* ===== LOGIN ===== */
   if (!loggedIn) {
     return (
       <main className="min-h-screen bg-slate-900 flex items-center justify-center">
@@ -87,33 +64,90 @@ export default function TeacherPage() {
           />
 
           <button
-            onClick={handleLogin}
-            className="w-full bg-blue-600 text-white py-2 rounded"
+            onClick={async () => {
+              setStatus("Logging in...");
+              const { data, error } =
+                await supabase.auth.signInWithPassword({
+                  email,
+                  password,
+                });
+
+              if (error) {
+                setStatus(error.message);
+                return;
+              }
+
+              if (data.session) {
+                setLoggedIn(true);
+                setStatus("");
+              }
+            }}
+            className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded"
           >
             Login
           </button>
 
-          {status && <p className="text-red-400 text-sm">{status}</p>}
+          {status && (
+            <p className="text-red-400 text-center text-sm">
+              {status}
+            </p>
+          )}
         </div>
       </main>
     );
   }
+
+  /* ===== DASHBOARD ===== */
   return (
     <main className="min-h-screen bg-slate-900 flex flex-col items-center justify-center gap-6">
-      <button
-        onClick={generateQR}
-        className="bg-green-600 text-white px-6 py-2 rounded"
-      >
-        Generate QR
-      </button>
+      <h1 className="text-2xl font-bold text-white">
+        Teacher Dashboard
+      </h1>
+
+      {!qrValue && (
+        <button
+          onClick={generateQR}
+          className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg"
+        >
+          Generate Attendance QR
+        </button>
+      )}
 
       {qrValue && (
-        <div className="bg-white p-4 rounded">
-          <QRCodeCanvas value={qrValue} size={220} />
+        <div className="bg-white p-6 rounded-lg flex flex-col items-center gap-4">
+          <QRCodeCanvas value={qrValue} size={240} />
+          <p className="text-black text-sm font-medium">
+            Students scan this QR
+          </p>
+          <p className="text-gray-600 text-xs">
+            Expires in 2 minutes
+          </p>
+
+          <button
+            onClick={() => setQrValue("")}
+            className="text-blue-600 text-sm underline"
+          >
+            Generate new QR
+          </button>
         </div>
       )}
 
-      {status && <p className="text-red-400">{status}</p>}
+      {status && (
+        <p className="text-green-400 text-sm">
+          {status}
+        </p>
+      )}
+
+      <button
+        onClick={async () => {
+          await supabase.auth.signOut();
+          setLoggedIn(false);
+          setQrValue("");
+        }}
+        className="text-slate-400 text-sm mt-6"
+      >
+        Logout
+      </button>
     </main>
   );
 }
