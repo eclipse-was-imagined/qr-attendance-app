@@ -4,6 +4,8 @@ import { useState } from "react";
 import { supabase } from "../../lib/supabase";
 import { QRCodeCanvas } from "qrcode.react";
 
+const ALLOWED_RADIUS = 50; // meters (students must be within this)
+
 export default function TeacherPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -13,7 +15,6 @@ export default function TeacherPage() {
 
   const handleLogin = async () => {
     setStatus("Logging in...");
-
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
@@ -31,6 +32,17 @@ export default function TeacherPage() {
   };
 
   const generateQR = async () => {
+    setStatus("Getting location...");
+
+    const position = await new Promise<GeolocationPosition>((resolve, reject) =>
+      navigator.geolocation.getCurrentPosition(resolve, reject, {
+        enableHighAccuracy: true,
+      })
+    );
+
+    const teacherLat = position.coords.latitude;
+    const teacherLng = position.coords.longitude;
+
     const {
       data: { user },
     } = await supabase.auth.getUser();
@@ -41,14 +53,15 @@ export default function TeacherPage() {
     }
 
     const token = Math.random().toString(36).substring(2, 12);
-    const expiry = Date.now() + 2 * 60 * 1000; // 2 minutes
+    const expiry = Date.now() + 2 * 60 * 1000; // 2 min
 
-    // token | expiry | teacherEmail
-    const payload = `${token}|${expiry}|${user.email}`;
+    // token|expiry|teacherEmail|lat|lng
+    const payload = `${token}|${expiry}|${user.email}|${teacherLat}|${teacherLng}`;
+
     setQrValue(payload);
+    setStatus("");
   };
 
-  // 🔐 LOGIN SCREEN
   if (!loggedIn) {
     return (
       <main className="min-h-screen bg-slate-900 flex items-center justify-center">
@@ -75,35 +88,21 @@ export default function TeacherPage() {
 
           <button
             onClick={handleLogin}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded"
+            className="w-full bg-blue-600 text-white py-2 rounded"
           >
             Login
           </button>
 
-          {status && (
-            <p className="text-red-400 text-center text-sm">
-              {status}
-            </p>
-          )}
-
-          <a href="/" className="block text-center text-slate-400 text-sm">
-            ← Back to Home
-          </a>
+          {status && <p className="text-red-400 text-sm">{status}</p>}
         </div>
       </main>
     );
   }
-
-  // 📷 QR GENERATION SCREEN
   return (
     <main className="min-h-screen bg-slate-900 flex flex-col items-center justify-center gap-6">
-      <h1 className="text-2xl font-bold text-white">
-        Generate Attendance QR
-      </h1>
-
       <button
         onClick={generateQR}
-        className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded"
+        className="bg-green-600 text-white px-6 py-2 rounded"
       >
         Generate QR
       </button>
@@ -114,15 +113,7 @@ export default function TeacherPage() {
         </div>
       )}
 
-      {status && (
-        <p className="text-red-400 text-sm">
-          {status}
-        </p>
-      )}
-
-      <a href="/" className="text-slate-400 hover:text-white text-sm">
-        ← Back to Home
-      </a>
+      {status && <p className="text-red-400">{status}</p>}
     </main>
   );
 }
