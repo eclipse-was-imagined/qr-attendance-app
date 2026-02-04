@@ -29,7 +29,7 @@ export default function TeacherPage() {
     }
 
     const token = crypto.randomUUID();
-    const expiry = Date.now() + 2 * 60 * 1000; // 2 minutes
+    const expiry = Date.now() + 5 * 60 * 1000; // 5 minutes
 
     // token | expiry | teacherEmail
     const payload = `${token}|${expiry}|${user.email}`;
@@ -120,7 +120,7 @@ export default function TeacherPage() {
             Students scan this QR
           </p>
           <p className="text-gray-600 text-xs">
-            Expires in 2 minutes
+            Expires in 5 minutes
           </p>
 
           <button
