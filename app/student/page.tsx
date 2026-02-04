@@ -4,7 +4,9 @@ import { useEffect, useState } from "react";
 import { Html5QrcodeScanner } from "html5-qrcode";
 import { supabase } from "../../lib/supabase";
 
+/* ===== CONFIG ===== */
 const ALLOWED_RADIUS = 50; // meters
+/* ================== */
 
 function getDistanceInMeters(
   lat1: number,
@@ -14,7 +16,7 @@ function getDistanceInMeters(
 ) {
   const R = 6371000;
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
-  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const dLon = ((lat2 - lat1) * Math.PI) / 180;
 
   const a =
     Math.sin(dLat / 2) ** 2 +
@@ -26,15 +28,19 @@ function getDistanceInMeters(
 }
 
 export default function StudentPage() {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [loggedIn, setLoggedIn] = useState(false);
   const [status, setStatus] = useState("");
 
+  // Check existing session
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       if (data.session) setLoggedIn(true);
     });
   }, []);
 
+  // Start QR scanner ONLY after login
   useEffect(() => {
     if (!loggedIn) return;
 
@@ -45,6 +51,7 @@ export default function StudentPage() {
     );
 
     const onScanSuccess = async (decodedText: string) => {
+      // Expected: token|expiry|teacherEmail|lat|lng
       const parts = decodedText.split("|");
       if (parts.length !== 5) {
         setStatus("Invalid QR ❌");
@@ -107,12 +114,75 @@ export default function StudentPage() {
 
     scanner.render(onScanSuccess, () => {});
 
-    // ✅ FIXED CLEANUP (NOT async)
     return () => {
       scanner.clear().catch(() => {});
     };
   }, [loggedIn]);
 
+  /* ===== LOGIN SCREEN ===== */
+  if (!loggedIn) {
+    return (
+      <main className="min-h-screen bg-slate-900 flex items-center justify-center">
+        <div className="bg-slate-800 p-8 rounded-lg w-80 space-y-4">
+          <h1 className="text-2xl font-bold text-white text-center">
+            Student Login
+          </h1>
+
+          <input
+            type="email"
+            placeholder="Email"
+            className="w-full p-2 rounded bg-slate-700 text-white"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
+
+          <input
+            type="password"
+            placeholder="Password"
+            className="w-full p-2 rounded bg-slate-700 text-white"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+
+          <button
+            onClick={async () => {
+              setStatus("Logging in...");
+              const { data, error } =
+                await supabase.auth.signInWithPassword({
+                  email,
+                  password,
+                });
+
+              if (error) {
+                setStatus(error.message);
+                return;
+              }
+
+              if (data.session) {
+                setLoggedIn(true);
+                setStatus("");
+              }
+            }}
+            className="w-full bg-green-600 hover:bg-green-700 text-white py-2 rounded"
+          >
+            Login
+          </button>
+
+          {status && (
+            <p className="text-red-400 text-center text-sm">
+              {status}
+            </p>
+          )}
+
+          <a href="/" className="block text-center text-slate-400 text-sm">
+            ← Back to Home
+          </a>
+        </div>
+      </main>
+    );
+  }
+
+  /* ===== SCANNER SCREEN ===== */
   return (
     <main className="min-h-screen bg-slate-900 flex flex-col items-center justify-center gap-6">
       <h1 className="text-xl font-bold text-white">
@@ -129,6 +199,17 @@ export default function StudentPage() {
           {status}
         </p>
       )}
+
+      <button
+        onClick={async () => {
+          await supabase.auth.signOut();
+          setLoggedIn(false);
+        }}
+        className="text-slate-400 text-sm"
+      >
+        Logout
+      </button>
     </main>
   );
 }
+
