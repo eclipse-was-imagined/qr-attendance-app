@@ -60,14 +60,12 @@ export default function StudentPage() {
         teacher_email: teacherEmail,
       });
 
-      if (error) {
-        if (error.code === "23505") {
-          setStatus("Attendance already marked ❌");
-        } else {
-          setStatus("Failed to mark attendance ❌");
-        }
-        return;
-      }
+    if (error) {
+  console.error("SUPABASE INSERT ERROR:", error);
+  setStatus(error.message);
+  return;
+}
+
 
       setStatus("Attendance marked ✅");
       scanner.clear();
