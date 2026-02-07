@@ -5,19 +5,18 @@ import { Html5QrcodeScanner } from "html5-qrcode";
 import { supabase } from "../../lib/supabase";
 
 export default function StudentPage() {
-  const [registerNo, setRegisterNo] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [registerNo, setRegisterNo] = useState("");
   const [loggedIn, setLoggedIn] = useState(false);
   const [status, setStatus] = useState("");
 
-  /* ===== CHECK SESSION ===== */
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       if (data.session) setLoggedIn(true);
     });
   }, []);
 
-  /* ===== START QR SCANNER ===== */
   useEffect(() => {
     if (!loggedIn) return;
 
@@ -29,7 +28,6 @@ export default function StudentPage() {
 
     const onScanSuccess = async (decodedText: string) => {
       let payload;
-
       try {
         payload = JSON.parse(decodedText);
       } catch {
@@ -38,11 +36,6 @@ export default function StudentPage() {
       }
 
       const { session_id } = payload;
-
-      if (!session_id) {
-        setStatus("Invalid session ❌");
-        return;
-      }
 
       const { error } = await supabase.from("attendance").insert({
         session_id,
@@ -53,7 +46,6 @@ export default function StudentPage() {
         if (error.code === "23505") {
           setStatus("Attendance already marked ✅");
         } else {
-          console.error("SUPABASE INSERT ERROR:", error);
           setStatus(error.message);
         }
         return;
@@ -64,13 +56,40 @@ export default function StudentPage() {
     };
 
     scanner.render(onScanSuccess, () => {});
-
     return () => {
       scanner.clear().catch(() => {});
     };
   }, [loggedIn, registerNo]);
 
-  /* ===== LOGIN ===== */
+  const loginStudent = async () => {
+    setStatus("Logging in...");
+
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    if (error) {
+      setStatus(error.message);
+      return;
+    }
+
+    const { data } = await supabase
+      .from("students")
+      .select("*")
+      .eq("email", email)
+      .eq("register_no", registerNo)
+      .single();
+
+    if (!data) {
+      setStatus("Register number does not match email ❌");
+      return;
+    }
+
+    setLoggedIn(true);
+    setStatus("");
+  };
+
   if (!loggedIn) {
     return (
       <main className="min-h-screen bg-slate-900 flex items-center justify-center">
@@ -80,11 +99,11 @@ export default function StudentPage() {
           </h1>
 
           <input
-            type="text"
-            placeholder="Register Number"
+            type="email"
+            placeholder="Email"
             className="w-full p-2 rounded bg-slate-700 text-white"
-            value={registerNo}
-            onChange={(e) => setRegisterNo(e.target.value)}
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
           />
 
           <input
@@ -95,57 +114,39 @@ export default function StudentPage() {
             onChange={(e) => setPassword(e.target.value)}
           />
 
+          <input
+            type="text"
+            placeholder="Register Number"
+            className="w-full p-2 rounded bg-slate-700 text-white"
+            value={registerNo}
+            onChange={(e) => setRegisterNo(e.target.value)}
+          />
+
           <button
-            onClick={async () => {
-              setStatus("Logging in...");
-
-              const { data, error } =
-                await supabase.auth.signInWithPassword({
-                  email: `${registerNo}@student.local`,
-                  password,
-                });
-
-              if (error) {
-                setStatus(error.message);
-                return;
-              }
-
-              if (data.session) {
-                setLoggedIn(true);
-                setStatus("");
-              }
-            }}
+            onClick={loginStudent}
             className="w-full bg-green-600 hover:bg-green-700 text-white py-2 rounded"
           >
             Login
           </button>
 
           {status && (
-            <p className="text-red-400 text-center text-sm">
-              {status}
-            </p>
+            <p className="text-red-400 text-center text-sm">{status}</p>
           )}
         </div>
       </main>
     );
   }
 
-  /* ===== SCANNER PAGE ===== */
   return (
     <main className="min-h-screen bg-slate-900 flex flex-col items-center justify-center gap-6">
       <h1 className="text-xl font-bold text-white">
         Scan Attendance QR
       </h1>
 
-      <div
-        id="reader"
-        className="w-72 bg-slate-800 rounded border border-slate-600"
-      />
+      <div id="reader" className="w-72 bg-slate-800 rounded" />
 
       {status && (
-        <p className="text-white text-center text-sm">
-          {status}
-        </p>
+        <p className="text-white text-sm">{status}</p>
       )}
 
       <button
