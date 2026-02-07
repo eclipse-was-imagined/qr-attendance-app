@@ -5,19 +5,19 @@ import { Html5QrcodeScanner } from "html5-qrcode";
 import { supabase } from "../../lib/supabase";
 
 export default function StudentPage() {
-  const [email, setEmail] = useState("");
+  const [registerNo, setRegisterNo] = useState("");
   const [password, setPassword] = useState("");
   const [loggedIn, setLoggedIn] = useState(false);
   const [status, setStatus] = useState("");
 
-  // Check session
+  /* ===== CHECK SESSION ===== */
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       if (data.session) setLoggedIn(true);
     });
   }, []);
 
-  // Start scanner after login
+  /* ===== START QR SCANNER ===== */
   useEffect(() => {
     if (!loggedIn) return;
 
@@ -28,46 +28,38 @@ export default function StudentPage() {
     );
 
     const onScanSuccess = async (decodedText: string) => {
-      // token | expiry | teacherEmail
-      const parts = decodedText.split("|");
+      let payload;
 
-      if (parts.length < 3) {
+      try {
+        payload = JSON.parse(decodedText);
+      } catch {
         setStatus("Invalid QR ❌");
         return;
       }
 
-      const qrToken = parts[0];
-      const expiry = Number(parts[1]);
-      const teacherEmail = parts[2];
+      const { session_id } = payload;
 
-      if (Date.now() > expiry) {
-        setStatus("QR expired ❌");
-        return;
-      }
-
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      if (!user?.email) {
-        setStatus("Not logged in ❌");
+      if (!session_id) {
+        setStatus("Invalid session ❌");
         return;
       }
 
       const { error } = await supabase.from("attendance").insert({
-        student_email: user.email,
-        qr_value: qrToken,
-        teacher_email: teacherEmail,
+        session_id,
+        register_no: registerNo,
       });
 
-    if (error) {
-  console.error("SUPABASE INSERT ERROR:", error);
-  setStatus(error.message);
-  return;
-}
+      if (error) {
+        if (error.code === "23505") {
+          setStatus("Attendance already marked ✅");
+        } else {
+          console.error("SUPABASE INSERT ERROR:", error);
+          setStatus(error.message);
+        }
+        return;
+      }
 
-
-      setStatus("Attendance marked ✅");
+      setStatus("Attendance marked successfully ✅");
       scanner.clear();
     };
 
@@ -76,7 +68,7 @@ export default function StudentPage() {
     return () => {
       scanner.clear().catch(() => {});
     };
-  }, [loggedIn]);
+  }, [loggedIn, registerNo]);
 
   /* ===== LOGIN ===== */
   if (!loggedIn) {
@@ -88,11 +80,11 @@ export default function StudentPage() {
           </h1>
 
           <input
-            type="email"
-            placeholder="Email"
+            type="text"
+            placeholder="Register Number"
             className="w-full p-2 rounded bg-slate-700 text-white"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            value={registerNo}
+            onChange={(e) => setRegisterNo(e.target.value)}
           />
 
           <input
@@ -106,9 +98,10 @@ export default function StudentPage() {
           <button
             onClick={async () => {
               setStatus("Logging in...");
+
               const { data, error } =
                 await supabase.auth.signInWithPassword({
-                  email,
+                  email: `${registerNo}@student.local`,
                   password,
                 });
 
@@ -137,7 +130,7 @@ export default function StudentPage() {
     );
   }
 
-  /* ===== SCANNER ===== */
+  /* ===== SCANNER PAGE ===== */
   return (
     <main className="min-h-screen bg-slate-900 flex flex-col items-center justify-center gap-6">
       <h1 className="text-xl font-bold text-white">

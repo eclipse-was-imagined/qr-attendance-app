@@ -5,54 +5,74 @@ import { QRCodeCanvas } from "qrcode.react";
 import { supabase } from "../../lib/supabase";
 
 export default function TeacherPage() {
-  const [email, setEmail] = useState("");
+  const [facultyId, setFacultyId] = useState("");
   const [password, setPassword] = useState("");
   const [loggedIn, setLoggedIn] = useState(false);
+
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const [qrValue, setQrValue] = useState("");
   const [status, setStatus] = useState("");
 
-  // Check session
+  /* ===== LOGIN CHECK ===== */
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       if (data.session) setLoggedIn(true);
     });
   }, []);
 
-  const generateQR = async () => {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+  /* ===== DYNAMIC QR (every 10 sec) ===== */
+  useEffect(() => {
+    if (!sessionId) return;
 
-    if (!user?.email) {
-      setStatus("Not logged in ❌");
+    const interval = setInterval(() => {
+      const payload = JSON.stringify({
+        session_id: sessionId,
+        t: Date.now(),
+      });
+
+      setQrValue(payload);
+    }, 10000);
+
+    return () => clearInterval(interval);
+  }, [sessionId]);
+
+  /* ===== CREATE SESSION ===== */
+  const startSession = async () => {
+    if (!facultyId) {
+      setStatus("Faculty ID missing ❌");
       return;
     }
 
-    const token = crypto.randomUUID();
-    const expiry = Date.now() + 5 * 60 * 1000; // 5 minutes
+    const { data, error } = await supabase
+      .from("sessions")
+      .insert({ faculty_id: facultyId })
+      .select()
+      .single();
 
-    // token | expiry | teacherEmail
-    const payload = `${token}|${expiry}|${user.email}`;
+    if (error) {
+      setStatus(error.message);
+      return;
+    }
 
-    setQrValue(payload);
-    setStatus("QR generated (valid for 2 minutes)");
+    setSessionId(data.id);
+    setStatus("Attendance session started ✅");
   };
 
-  /* ===== LOGIN ===== */
+  /* ===== LOGIN PAGE ===== */
   if (!loggedIn) {
     return (
       <main className="min-h-screen bg-slate-900 flex items-center justify-center">
         <div className="bg-slate-800 p-8 rounded-lg w-80 space-y-4">
           <h1 className="text-2xl font-bold text-white text-center">
-            Teacher Login
+            Faculty Login
           </h1>
 
           <input
-            type="email"
-            placeholder="Email"
+            type="text"
+            placeholder="Faculty ID"
             className="w-full p-2 rounded bg-slate-700 text-white"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            value={facultyId}
+            onChange={(e) => setFacultyId(e.target.value)}
           />
 
           <input
@@ -66,9 +86,10 @@ export default function TeacherPage() {
           <button
             onClick={async () => {
               setStatus("Logging in...");
+
               const { data, error } =
                 await supabase.auth.signInWithPassword({
-                  email,
+                  email: `${facultyId}@faculty.local`,
                   password,
                 });
 
@@ -101,33 +122,36 @@ export default function TeacherPage() {
   return (
     <main className="min-h-screen bg-slate-900 flex flex-col items-center justify-center gap-6">
       <h1 className="text-2xl font-bold text-white">
-        Teacher Dashboard
+        Faculty Dashboard
       </h1>
 
-      {!qrValue && (
+      {!sessionId && (
         <button
-          onClick={generateQR}
+          onClick={startSession}
           className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg"
         >
-          Generate Attendance QR
+          Start Attendance Session
         </button>
       )}
 
-      {qrValue && (
+      {sessionId && (
         <div className="bg-white p-6 rounded-lg flex flex-col items-center gap-4">
           <QRCodeCanvas value={qrValue} size={240} />
           <p className="text-black text-sm font-medium">
-            Students scan this QR
+            QR refreshes every 10 seconds
           </p>
           <p className="text-gray-600 text-xs">
-            Expires in 5 minutes
+            Session ID: {sessionId}
           </p>
 
           <button
-            onClick={() => setQrValue("")}
-            className="text-blue-600 text-sm underline"
+            onClick={() => {
+              setSessionId(null);
+              setQrValue("");
+            }}
+            className="text-red-600 text-sm underline"
           >
-            Generate new QR
+            End Session
           </button>
         </div>
       )}
@@ -142,6 +166,7 @@ export default function TeacherPage() {
         onClick={async () => {
           await supabase.auth.signOut();
           setLoggedIn(false);
+          setSessionId(null);
           setQrValue("");
         }}
         className="text-slate-400 text-sm mt-6"
