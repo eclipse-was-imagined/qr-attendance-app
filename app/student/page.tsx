@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { Html5QrcodeScanner } from "html5-qrcode";
+import * as faceapi from "face-api.js";
 import { supabase } from "../../lib/supabase";
 
 export default function StudentPage() {
@@ -11,6 +12,8 @@ export default function StudentPage() {
   const [loggedIn, setLoggedIn] = useState(false);
   const [status, setStatus] = useState("");
 
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       if (data.session) setLoggedIn(true);
@@ -19,6 +22,8 @@ export default function StudentPage() {
 
   useEffect(() => {
     if (!loggedIn) return;
+
+    loadFaceModels();
 
     const scanner = new Html5QrcodeScanner(
       "reader",
@@ -36,6 +41,15 @@ export default function StudentPage() {
       }
 
       const { session_id } = payload;
+
+      setStatus("Verifying face...");
+
+      const verified = await verifyFace();
+
+      if (!verified) {
+        setStatus("Face verification failed ❌");
+        return;
+      }
 
       const { error } = await supabase.from("attendance").insert({
         session_id,
@@ -60,6 +74,52 @@ export default function StudentPage() {
       scanner.clear().catch(() => {});
     };
   }, [loggedIn, registerNo]);
+
+  const loadFaceModels = async () => {
+    await faceapi.nets.tinyFaceDetector.loadFromUri("/models");
+    await faceapi.nets.faceLandmark68Net.loadFromUri("/models");
+    await faceapi.nets.faceRecognitionNet.loadFromUri("/models");
+  };
+
+  const startCamera = async () => {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+    if (videoRef.current) {
+      videoRef.current.srcObject = stream;
+    }
+  };
+
+  const verifyFace = async () => {
+    await startCamera();
+
+    await new Promise((res) => setTimeout(res, 2000));
+
+    const detection = await faceapi
+      .detectSingleFace(
+        videoRef.current!,
+        new faceapi.TinyFaceDetectorOptions()
+      )
+      .withFaceLandmarks()
+      .withFaceDescriptor();
+
+    if (!detection) return false;
+
+    const liveDescriptor = Array.from(detection.descriptor);
+
+    const { data } = await supabase
+      .from("students")
+      .select("face_embedding")
+      .eq("register_no", registerNo)
+      .single();
+
+    if (!data || !data.face_embedding) return false;
+
+    const distance = faceapi.euclideanDistance(
+      liveDescriptor,
+      data.face_embedding
+    );
+
+    return distance < 0.5;
+  };
 
   const loginStudent = async () => {
     setStatus("Logging in...");
@@ -144,6 +204,13 @@ export default function StudentPage() {
       </h1>
 
       <div id="reader" className="w-72 bg-slate-800 rounded" />
+
+      <video
+        ref={videoRef}
+        autoPlay
+        muted
+        className="hidden"
+      />
 
       {status && (
         <p className="text-white text-sm">{status}</p>
